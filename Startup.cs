@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Data;
 using System.Data.SqlClient;
 using DapperCURD.Repository;
+using DapperCURD.Model;
 
 public class Startup
 {
@@ -24,6 +25,10 @@ public class Startup
         services.AddScoped<ProductRepository>();
         services.AddScoped<OrderRepository>();
         services.AddScoped<CategoryRepository>();
+        services.AddScoped<ShipperRepository>();
+        services.AddScoped<PaymentRepository>();
+        services.AddScoped<CustomerRepository>();
+        services.AddScoped<ShipmentRepository>();
 
         services.AddControllers();
     }

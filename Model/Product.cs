@@ -1,4 +1,4 @@
-﻿namespace DapperCURD.Model
+﻿    namespace DapperCURD.Model
 {
     public class Product
     {
