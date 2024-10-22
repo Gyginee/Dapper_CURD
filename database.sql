@@ -304,3 +304,52 @@ BEGIN
     OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
 END
 GO
+
+--GetTotalSalesByDateRange
+CREATE PROCEDURE GetTotalSalesByDateRange
+    @Startdate DATE,
+    @Enddate DATE
+AS
+BEGIN
+    SELECT SUM( o.Quantity * p.Price ) AS TotalSales
+    FROM Orders o
+    JOIN Products p ON o.ProductId = p.Id
+    WHERE 
+    o.OrderDate BETWEEN @Startdate AND @Enddate;
+END
+GO
+
+--GetTopSellingProduct
+CREATE PROCEDURE GetTopSellingProduct
+    @TopNumber INT
+AS
+BEGIN
+    SELECT TOP(@TopNumber)
+    p.Name AS ProductName,
+    SUM(o.Quantity) AS TotalQuantitySold
+    FROM Orders o
+    JOIN Products p ON o.ProductId = p.Id
+    GROUP BY p.Name
+    ORDER BY TotalQuantitySold DESC;
+END
+GO
+
+--GetShipperOrderDetails
+CREATE PROCEDURE GetShipperOrderDetails
+    @Id INT
+AS
+BEGIN
+    SELECT
+        o.Id AS OrderId,
+        o.OrderDate,
+        p.Name AS ProductName,
+        o.Quantity,
+        s.ShipmentDate,
+        s.Status
+    FROM Orders o
+    JOIN Shipments s ON o.Id = s.Id
+    JOIN Products p ON o.ProductId = p.Id
+    WHERE s.ShipperId = @Id;
+END
+GO
+    
