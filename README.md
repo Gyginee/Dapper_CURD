@@ -2,6 +2,7 @@
 An example project about .Net8 and using Dapper for connecting MS SQL SERVER
 
 ## [SQL](database.sql)
+![SQL Diagram](databaseImg.png)
 ## Note
 ### Make formal ASP.NET Core
   - Using MVC Architecture and RESTful API
