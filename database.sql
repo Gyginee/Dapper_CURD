@@ -322,6 +322,57 @@ BEGIN
 END
 GO
 
+--GetCustomerByPhone
+CREATE PROCEDURE GetCustomerByPhone
+    @Phone NVARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+    Id,
+    FirstName + ' ' + LastName AS FullName,
+    Email,
+    Phone,
+    Address
+    FROM Customers WHERE Phone = @Phone;
+END
+GO
+
+--GetTotalPaymentMethod
+CREATE PROCEDURE GetTotalPaymentMethod
+    @PaymentMethod NVARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT COUNT(*) AS TotalPaymentMethod
+    FROM Payments
+    WHERE PaymentMethod = @PaymentMethod;
+END
+GO
+
+--GetProductByTrackingNumber
+CREATE PROCEDURE GetProductByTrackingNumber
+    @TrackingNumber NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+    p.Name AS ProductName,
+    o.Quantity AS OrderQuantity,
+    o.OrderDate AS OrderDate,
+    sh.Name AS ShipperName,
+    sh.Phone AS ShipperPhone,
+    s.ShipmentDate,
+    s.Status
+    FROM Shipments s
+    JOIN Shippers sh ON s.ShipperId = sh.Id
+    JOIN Orders o ON s.OrderId = o.Id
+    JOIN Products p ON o.ProductId = p.Id
+    WHERE s.TrackingNumber = @TrackingNumber;
+END
+GO
+
+
 --GetRatingAVGByProductId
 CREATE PROCEDURE GetRatingAVGByProductId
     @Id INT
@@ -346,7 +397,6 @@ GO
 CREATE PROCEDURE SearchProduct
     @KeySearch NVARCHAR(256),
     @TypeSearch INT, --1: Tất cả, 2: Mức ưu đãi, 3: Đánh giá 
-    @CategoryId INT, --Nếu null thì trả về tất cả   
     @PageNumber INT, 
     @PageSize INT
 AS
@@ -369,6 +419,9 @@ BEGIN
                 FROM Products p
                 JOIN Categories c ON p.CategoryId = c.Id
                 JOIN Discounts d ON p.Id = d.ProductId
+                ORDER BY p.Name
+                OFFSET @Offset ROWS
+                FETCH NEXT @PageSize ROWS ONLY;
             END
             ELSE --Tìm kiếm theo tên
             BEGIN
@@ -383,7 +436,10 @@ BEGIN
                 FROM Products p
                 JOIN Categories c ON p.CategoryId = c.Id
                 JOIN Discounts d ON p.Id = d.ProductId
-                WHERE p.Name LIKE '%' + @KeySearch + '%' AND (p.CategoryId = @CategoryId OR @CategoryId IS NULL)
+                WHERE p.Name LIKE '%' + @KeySearch + '%'
+                ORDER BY p.Name
+                OFFSET @Offset ROWS
+                FETCH NEXT @PageSize ROWS ONLY;
             END
     END
     IF(@TypeSearch = 2) --Mức ưu đãi
@@ -402,8 +458,9 @@ BEGIN
                 JOIN Categories c ON p.CategoryId = c.Id
                 JOIN Discounts d ON p.Id = d.ProductId
                 WHERE d.StartDate <= GETDATE() AND d.EndDate >= GETDATE()
-                AND (p.CategoryId = @CategoryId OR @CategoryId IS NULL)
                 ORDER BY d.DiscountPercentage DESC
+                OFFSET @Offset ROWS
+                FETCH NEXT @PageSize ROWS ONLY;
             END
         ELSE --Tìm kiếm theo tên
             BEGIN
@@ -419,7 +476,6 @@ BEGIN
                 JOIN Categories c ON p.CategoryId = c.Id
                 JOIN Discounts d ON p.Id = d.ProductId
                 WHERE p.Name LIKE '%' + @KeySearch + '%' AND d.StartDate <= GETDATE() AND d.EndDate >= GETDATE()
-                AND (p.CategoryId = @CategoryId OR @CategoryId IS NULL)
                 ORDER BY d.DiscountPercentage DESC
                 OFFSET @Offset ROWS
                 FETCH NEXT @PageSize ROWS ONLY;
@@ -528,6 +584,40 @@ BEGIN
 END
 GO
 
+--GetProfitByMonth
+CREATE PROCEDURE GetProfitByMonth
+    @Month INT,
+    @Year INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    WITH ProfitData AS (
+        SELECT 
+            DAY(o.OrderDate) AS Day, 
+            COALESCE(SUM(o.Quantity * p.Price), 0) AS DailyProfit
+        FROM Orders o
+        LEFT JOIN Products p ON o.ProductId = p.Id
+        WHERE MONTH(o.OrderDate) = @Month
+        AND YEAR(o.OrderDate) = @Year
+        GROUP BY DAY(o.OrderDate)
+    )
+    SELECT 
+        'Profit' AS Days,
+        [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
+        [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
+        [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31]
+    FROM ProfitData
+    PIVOT (
+        SUM(DailyProfit)
+        FOR Day IN ([1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
+                    [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
+                    [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31])
+    ) AS PivotTable;
+END
+GO
+--
+
+
 --=======================END STORED PROCEDURE
 
 --=======================DATA
@@ -548,17 +638,43 @@ INSERT INTO Products (Name, Price, CategoryId) VALUES
 ('T-shirt', 19.99, 2),
 ('Jeans', 39.99, 2),
 ('Apple', 0.99, 3),
+('ApplePen', 8.99, 3),
+('AppleWatch', 199.99, 3),
+('AppleAirpods', 149.99, 3),
 ('Milk', 1.49, 3),
 ('Banana', 0.59, 3),
 ('Fiction Book', 14.99, 4),
-('Blender', 29.99, 5);
+('Blender', 29.99, 5),
+('Smartwatch', 199.99, 1),  -- Electronics
+('Headphones', 89.99, 1),   -- Electronics
+('Jacket', 59.99, 2),       -- Clothing
+('Sneakers', 79.99, 2),     -- Clothing
+('Cereal', 3.99, 3),        -- Groceries
+('Coffee', 7.99, 3),        -- Groceries
+('Cookbook', 24.99, 4),     -- Books
+('Vacuum Cleaner', 149.99, 5), -- Home Appliances
+('Microwave Oven', 89.99, 5), -- Home Appliances
+('Tablet', 299.99, 1);       -- Electronics
 GO
 
 -- Insert Sample Data into Orders
 INSERT INTO Orders (ProductId, Quantity) VALUES 
 (1, 2),  -- 2 Laptops
 (3, 5),  -- 5 T-shirts
-(5, 10); -- 10 Apples
+(5, 10), -- 10 Apples
+(4, 10), -- 10 Apples
+(12, 10), -- 10 Apples
+(7, 10), -- 10 Apples
+(8, 10), -- 10 Apples
+(9, 10), -- 10 Apples
+(2, 2),  -- 2 Laptops
+(6, 5),  -- 5 T-shirts
+(11, 10), -- 10 Apples
+(13, 10), -- 10 Apples
+(14, 10), -- 10 Apples
+(15, 10), -- 10 Apples
+(16, 10), -- 10 Apples
+(17, 10); -- 10 Apples
 GO
 
 -- Insert Sample Data into Customers
@@ -572,7 +688,12 @@ INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES
 ('William', 'Martinez', 'william.martinez@example.com', '567-890-1234', '111 Walnut Street'),
 ('Olivia', 'Garcia', 'olivia.garcia@example.com', '765-432-1098', '222 Spruce Avenue'),
 ('James', 'Wilson', 'james.wilson@example.com', '876-543-2109', '333 Redwood Street'),
-('Isabella', 'Lopez', 'isabella.lopez@example.com', '654-321-0987', '444 Palm Court');
+('Isabella', 'Lopez', 'isabella.lopez@example.com', '654-321-0987', '444 Palm Court'),
+('Liam', 'Smith', 'liam.smith@example.com', '111-222-3333', '123 Maple Street'),
+('Emma', 'Johnson', 'emma.johnson@example.com', '222-333-4444', '456 Pine Avenue'),
+('Noah', 'Williams', 'noah.williams@example.com', '333-444-5555', '789 Oak Boulevard'),
+('Ava', 'Jones', 'ava.jones@example.com', '444-555-6666', '321 Birch Lane'),
+('Oliver', 'Garcia', 'oliver.garcia@example.com', '555-666-7777', '654 Cedar Road');
 GO
 
 -- Insert Sample Data into Payments
@@ -586,7 +707,12 @@ INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES
 (7, 'Credit Card', 29.99),
 (8, 'Debit Card', 299.99),
 (9, 'Cash', 499.99),
-(10, 'Credit Card', 19.99);
+(10, 'Credit Card', 19.99),
+(11, 'Credit Card', 199.99),
+(12, 'PayPal', 49.99),
+(13, 'Debit Card', 19.90),
+(14, 'Credit Card', 99.99),
+(15, 'Cash', 59.90);
 GO
 
 -- Insert Sample Data into Shippers
@@ -600,7 +726,11 @@ INSERT INTO Shippers (Name, Phone, Email, Address) VALUES
 ('Next Day Shipping', '999-888-7777', 'nextday@shipping.com', '707 Seventh Street'),
 ('Best Freight', '666-555-4444', 'info@bestfreight.com', '808 Eighth Boulevard'),
 ('Prime Shipping', '444-333-2222', 'prime@shipping.com', '909 Ninth Road'),
-('Safe Cargo', '222-111-0000', 'contact@safecargo.com', '100 First Street');
+('Safe Cargo', '222-111-0000', 'contact@safecargo.com', '100 First Street'),
+('Swift Shipping', '111-222-4444', 'info@swifshipping.com', '111 First Avenue'),
+('Reliable Delivery', '222-333-5555', 'contact@reliabledelivery.com', '222 Second Street'),
+('Express Delivery', '333-444-6666', 'support@expressdelivery.com', '333 Third Boulevard'),
+('Quick Ship', '444-555-7777', 'service@quickship.com', '444 Fourth Lane');
 GO
 
 -- Insert Sample Data into Shipments
@@ -614,7 +744,12 @@ INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES
 (7, 7, 'ND54321', 'In Transit'),
 (8, 8, 'BF43210', 'Pending'),
 (9, 9, 'PS32109', 'Shipped'),
-(10, 10, 'SC21098', 'Delivered');
+(10, 10, 'SC21098', 'Delivered'),
+(11, 1, 'FD54321', 'Shipped'),
+(12, 2, 'SS12345', 'Delivered'),
+(13, 3, 'EL67890', 'In Transit'),
+(14, 4, 'RC98765', 'Pending'),
+(15, 5, 'GS54321', 'Delivered');
 GO
 
 -- Insert Sample Data into Discounts
@@ -627,7 +762,10 @@ INSERT INTO Discounts (ProductId, DiscountPercentage, StartDate, EndDate) VALUES
 (6, 15.00, '2023-06-01', '2023-06-30'), -- 15% off Milk
 (7, 5.00, '2023-07-01', '2023-07-31'),  -- 5% off Banana
 (8, 25.00, '2023-08-01', '2023-08-31'), -- 25% off Fiction Book
-(9, 30.00, '2023-09-01', '2023-09-30'); -- 30% off Blender
+(9, 30.00, '2023-09-01', '2023-09-30'), -- 30% off Blender
+(10, 20.00, '2023-10-01', '2023-10-31'), -- 20% off New Product
+(11, 15.00, '2023-11-01', '2023-11-30'), -- 15% off Another Product
+(12, 25.00, '2023-12-01', '2023-12-31');
 GO
 
 -- Insert Sample Data into Ratings
@@ -656,7 +794,10 @@ INSERT INTO Ratings (ProductId, UserId, Rating, Review) VALUES
 (7, 2, 3.8, 'Bananas were ripe and sweet.'),            -- Banana
 (8, 3, 4.5, 'A great read, highly recommend!'),         -- Fiction Book
 (9, 4, 4.7, 'Powerful blender, makes smoothies in seconds.'), -- Blender
-(9, 5, 4.9, 'Best blender I have ever used!');          -- Blender
+(9, 5, 4.9, 'Best blender I have ever used!'),
+(10, 1, 4.5, 'Great new product, highly recommend!'), -- New Product
+(11, 2, 4.0, 'Good value for the price.'),             -- Another Product
+(12, 3, 5.0, 'Absolutely love this product!');           -- Blender
 GO
 
 --=======================END DATA
