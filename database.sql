@@ -372,6 +372,67 @@ BEGIN
 END
 GO
 
+--GetProfitByProductByMonth
+CREATE PROCEDURE GetProfitByProductByMonth
+    @Month INT,
+    @Year INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    WITH ProfitData AS (
+        SELECT 
+            p.Name AS ProductName,
+            DAY(o.OrderDate) AS Day, 
+            COALESCE(SUM(o.Quantity * p.Price), 0) AS DailyProfit
+        FROM Orders o
+        JOIN Products p ON o.ProductId = p.Id
+        WHERE MONTH(o.OrderDate) = @Month
+        AND YEAR(o.OrderDate) = @Year
+        GROUP BY p.Name, DAY(o.OrderDate)
+    ),
+    TotalProfit AS (
+        SELECT 
+            DAY(o.OrderDate) AS Day,
+            COALESCE(SUM(o.Quantity * p.Price), 0) AS TotalDailyProfit
+        FROM Orders o
+        JOIN Products p ON o.ProductId = p.Id
+        WHERE MONTH(o.OrderDate) = @Month
+        AND YEAR(o.OrderDate) = @Year
+        GROUP BY DAY(o.OrderDate)
+    )
+
+    -- Lấy lợi nhuận theo sản phẩm
+    SELECT 
+        ProductName,
+        [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
+        [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
+        [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31]
+    FROM ProfitData
+    PIVOT (
+        SUM(DailyProfit)
+        FOR Day IN ([1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
+                    [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
+                    [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31])
+    ) AS ProductPivotTable
+
+    UNION ALL
+
+    -- Lấy tổng lợi nhuận cho mỗi ngày
+    SELECT 
+        'TotalProfit' AS ProductName,
+        [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
+        [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
+        [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31]
+    FROM TotalProfit
+    PIVOT (
+        SUM(TotalDailyProfit)
+        FOR Day IN ([1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
+                    [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
+                    [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31])
+    ) AS TotalPivotTable;
+END
+GO
 
 --GetRatingAVGByProductId
 CREATE PROCEDURE GetRatingAVGByProductId
@@ -584,37 +645,6 @@ BEGIN
 END
 GO
 
---GetProfitByMonth
-CREATE PROCEDURE GetProfitByMonth
-    @Month INT,
-    @Year INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    WITH ProfitData AS (
-        SELECT 
-            DAY(o.OrderDate) AS Day, 
-            COALESCE(SUM(o.Quantity * p.Price), 0) AS DailyProfit
-        FROM Orders o
-        LEFT JOIN Products p ON o.ProductId = p.Id
-        WHERE MONTH(o.OrderDate) = @Month
-        AND YEAR(o.OrderDate) = @Year
-        GROUP BY DAY(o.OrderDate)
-    )
-    SELECT 
-        'Profit' AS Days,
-        [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
-        [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
-        [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31]
-    FROM ProfitData
-    PIVOT (
-        SUM(DailyProfit)
-        FOR Day IN ([1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
-                    [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
-                    [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31])
-    ) AS PivotTable;
-END
-GO
 --
 
 
