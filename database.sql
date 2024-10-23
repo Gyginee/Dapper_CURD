@@ -372,14 +372,28 @@ BEGIN
 END
 GO
 
---GetProfitByProductByMonth
-CREATE PROCEDURE GetProfitByProductByMonth
+--GetProfitByProductByMonthFollowColumn
+CREATE PROCEDURE GetProfitByProductByMonthFollowColumn
     @Month INT,
     @Year INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE @SQL NVARCHAR(MAX);
+    DECLARE @Columns NVARCHAR(MAX);
+
+    -- Get the list of days in the specified month to use as columns
+
+	SELECT @Columns = STRING_AGG(QUOTENAME(OrderDay), ', ')
+	FROM (
+		SELECT DISTINCT DAY(OrderDate) AS OrderDay
+		FROM Orders
+		WHERE MONTH(OrderDate) = @Month AND YEAR(OrderDate) = @Year
+	) AS Days;
+
+    -- Dynamic SQL query
+    SET @SQL = N'
     WITH ProfitData AS (
         SELECT 
             p.Name AS ProductName,
@@ -390,49 +404,64 @@ BEGIN
         WHERE MONTH(o.OrderDate) = @Month
         AND YEAR(o.OrderDate) = @Year
         GROUP BY p.Name, DAY(o.OrderDate)
-    ),
-    TotalProfit AS (
+    )
+
+    -- Get Profit by Product by Day
+    SELECT 
+        ProductName, ' + @Columns + '
+    FROM ProfitData
+    PIVOT (
+        SUM(DailyProfit)
+        FOR Day IN (' + @Columns + ')
+    ) AS ProductPivotTable;';
+
+    EXEC sp_executesql @SQL, N'@Month INT, @Year INT', @Month, @Year;
+END
+GO
+
+--GetProfitByProductByMonth (Dynamic SQL)
+CREATE PROCEDURE GetProfitByProductByMonth
+    @Month INT,
+    @Year INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @SQL NVARCHAR(MAX);
+    DECLARE @Columns NVARCHAR(MAX);
+
+    --Get the list of product names to use as columns
+    SELECT @Columns = STRING_AGG(QUOTENAME(Name), ', ')
+    FROM Products;
+
+    --Dynamic SQL query
+    SET @SQL = N'
+    WITH ProfitData AS (
         SELECT 
-            DAY(o.OrderDate) AS Day,
-            COALESCE(SUM(o.Quantity * p.Price), 0) AS TotalDailyProfit
+            p.Name AS ProductName,
+            DAY(o.OrderDate) AS Day, 
+            COALESCE(SUM(o.Quantity * p.Price), 0) AS DailyProfit
         FROM Orders o
         JOIN Products p ON o.ProductId = p.Id
         WHERE MONTH(o.OrderDate) = @Month
         AND YEAR(o.OrderDate) = @Year
-        GROUP BY DAY(o.OrderDate)
+        GROUP BY p.Name, DAY(o.OrderDate)
+		--Clear Days without profit
+        HAVING COALESCE(SUM(o.Quantity * p.Price), 0) > 0 
     )
-
-    -- Lấy lợi nhuận theo sản phẩm
+    
     SELECT 
-        ProductName,
-        [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
-        [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
-        [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31]
+        Day, ' + @Columns + '
     FROM ProfitData
     PIVOT (
         SUM(DailyProfit)
-        FOR Day IN ([1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
-                    [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
-                    [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31])
-    ) AS ProductPivotTable
+        FOR ProductName IN (' + @Columns + ')
+    ) AS ProductPivotTable;';
 
-    UNION ALL
-
-    -- Lấy tổng lợi nhuận cho mỗi ngày
-    SELECT 
-        'TotalProfit' AS ProductName,
-        [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
-        [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
-        [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31]
-    FROM TotalProfit
-    PIVOT (
-        SUM(TotalDailyProfit)
-        FOR Day IN ([1], [2], [3], [4], [5], [6], [7], [8], [9], [10], 
-                    [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], 
-                    [21], [22], [23], [24], [25], [26], [27], [28], [29], [30], [31])
-    ) AS TotalPivotTable;
+    EXEC sp_executesql @SQL, N'@Month INT, @Year INT', @Month, @Year;
 END
 GO
+
 
 --GetRatingAVGByProductId
 CREATE PROCEDURE GetRatingAVGByProductId
