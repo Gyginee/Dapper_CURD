@@ -1,10 +1,12 @@
--- Create the Store Database
+﻿-- Create the Store Database
 CREATE DATABASE StoreDapper;
 GO
 
 -- Use the Store Database
 USE StoreDapper;
 GO
+
+--=======================TABLE
 
 -- Create Categories Table
 CREATE TABLE Categories (
@@ -33,51 +35,16 @@ CREATE TABLE Orders (
 );
 GO
 
--- Insert Sample Data into Categories
-INSERT INTO Categories (Name) VALUES ('Electronics');
-INSERT INTO Categories (Name) VALUES ('Clothing');
-INSERT INTO Categories (Name) VALUES ('Groceries');
-INSERT INTO Categories (Name) VALUES ('Books');
-INSERT INTO Categories (Name) VALUES ('Home Appliances');
-
--- Insert Sample Data into Products
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Laptop', 999.99, 1);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Smartphone', 599.99, 1);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('T-shirt', 19.99, 2);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Jeans', 39.99, 2);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Apple', 0.99, 3);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Milk', 1.49, 3);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Banana', 0.59, 3);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Fiction Book', 14.99, 4);
-INSERT INTO Products (Name, Price, CategoryId) VALUES ('Blender', 29.99, 5);
-
--- Insert Sample Data into Orders
-INSERT INTO Orders (ProductId, Quantity) VALUES (1, 2);  -- 2 Laptops
-INSERT INTO Orders (ProductId, Quantity) VALUES (3, 5);  -- 5 T-shirts
-INSERT INTO Orders (ProductId, Quantity) VALUES (5, 10); -- 10 Apples
-GO
-
--- Stored Procedure GetOrderDetailById
-CREATE PROCEDURE GetOrderDetailById
-    @Id INT
-AS
-BEGIN
-    SELECT 
-	o.Id AS OrderId,
-	o.Quantity ,
-	o.OrderDate,
-	p.Id AS ProductId,
-	p.Name AS ProductName,
-	p.Price AS ProductPrice,
-	c.Id AS CategoryId,
-	c.Name AS CategoryName
-
-	FROM Orders o
-	JOIN Products p ON o.ProductId = p.Id
-	JOIN Categories c ON p.CategoryId = c.Id
-	WHERE 
-	o.Id = @Id;
-END
+-- Create OrderDetails Table
+CREATE TABLE OrderDetails (
+    Id INT PRIMARY KEY IDENTITY, -- Khóa chính
+    OrderId INT NOT NULL, -- ID của đơn hàng
+    ProductId INT NOT NULL, -- ID của sản phẩm
+    Quantity INT NOT NULL, -- Số lượng sản phẩm
+    Price DECIMAL(18, 2) NOT NULL, -- Giá của sản phẩm tại thời điểm đặt hàng
+    FOREIGN KEY (OrderId) REFERENCES Orders(Id), -- Khóa ngoại liên kết với bảng Orders
+    FOREIGN KEY (ProductId) REFERENCES Products(Id) -- Khóa ngoại liên kết với bảng Products
+);
 GO
 
 -- Create Customers Table
@@ -120,54 +87,56 @@ CREATE TABLE Shipments (
     FOREIGN KEY (OrderId) REFERENCES Orders(Id),
     FOREIGN KEY (ShipperId) REFERENCES Shippers(Id)
 );
+GO
 
--- Insert Sample Data into Customers
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('John', 'Doe', 'john.doe@example.com', '123-456-7890', '123 Elm Street');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('Jane', 'Smith', 'jane.smith@example.com', '555-555-5555', '456 Oak Avenue');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('Michael', 'Brown', 'michael.brown@example.com', '789-456-1230', '789 Pine Road');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('Emily', 'Johnson', 'emily.johnson@example.com', '234-567-8901', '321 Birch Lane');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('David', 'Lee', 'david.lee@example.com', '987-654-3210', '654 Cedar Boulevard');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('Sophia', 'Davis', 'sophia.davis@example.com', '345-678-9012', '987 Maple Drive');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('William', 'Martinez', 'william.martinez@example.com', '567-890-1234', '111 Walnut Street');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('Olivia', 'Garcia', 'olivia.garcia@example.com', '765-432-1098', '222 Spruce Avenue');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('James', 'Wilson', 'james.wilson@example.com', '876-543-2109', '333 Redwood Street');
-INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES ('Isabella', 'Lopez', 'isabella.lopez@example.com', '654-321-0987', '444 Palm Court');
+-- Create Discounts Table
+CREATE TABLE Discounts (
+    Id INT PRIMARY KEY IDENTITY,
+    ProductId INT,
+    DiscountPercentage DECIMAL(5, 2) NOT NULL,
+    StartDate DATETIME NOT NULL,
+    EndDate DATETIME NOT NULL,
+    FOREIGN KEY (ProductId) REFERENCES Products(Id)
+);
+GO
 
--- Insert Sample Data into Payments
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (1, 'Credit Card', 1999.98);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (2, 'PayPal', 99.95);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (3, 'Debit Card', 9.90);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (4, 'Credit Card', 14.99);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (5, 'Cash', 29.90);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (6, 'PayPal', 59.98);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (7, 'Credit Card', 29.99);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (8, 'Debit Card', 299.99);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (9, 'Cash', 499.99);
-INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES (10, 'Credit Card', 19.99);
+-- Create Ratings Table
+CREATE TABLE Ratings (
+    Id INT PRIMARY KEY IDENTITY,
+    ProductId INT,
+    UserId INT, -- Assuming you have a Users table
+    Rating DECIMAL(3, 2) CHECK (Rating >= 0 AND Rating <= 5),
+    Review NVARCHAR(255), -- Optional review text
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (ProductId) REFERENCES Products(Id)
+);
+GO
 
--- Insert Sample Data into Shippers
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Fast Delivery', '111-222-3333', 'info@fastdelivery.com', '101 First Avenue');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Speedy Shipping', '444-555-6666', 'contact@speedyshipping.com', '202 Second Street');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Express Logistics', '777-888-9999', 'support@expresslogistics.com', '303 Third Boulevard');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Reliable Couriers', '123-456-7890', 'service@reliablecouriers.com', '404 Fourth Lane');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Global Shippers', '555-666-7777', 'global@shippers.com', '505 Fifth Road');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Quick Transport', '888-999-0000', 'quick@transport.com', '606 Sixth Avenue');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Next Day Shipping', '999-888-7777', 'nextday@shipping.com', '707 Seventh Street');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Best Freight', '666-555-4444', 'info@bestfreight.com', '808 Eighth Boulevard');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Prime Shipping', '444-333-2222', 'prime@shipping.com', '909 Ninth Road');
-INSERT INTO Shippers (Name, Phone, Email, Address) VALUES ('Safe Cargo', '222-111-0000', 'contact@safecargo.com', '100 First Street');
+--=======================END TABLE
 
--- Insert Sample Data into Shipments
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (1, 1, 'FD12345', 'Shipped');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (2, 2, 'SS54321', 'Delivered');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (3, 3, 'EL98765', 'In Transit');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (4, 4, 'RC87654', 'Pending');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (5, 5, 'GS76543', 'Delivered');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (6, 6, 'QT65432', 'Shipped');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (7, 7, 'ND54321', 'In Transit');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (8, 8, 'BF43210', 'Pending');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (9, 9, 'PS32109', 'Shipped');
-INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES (10, 10, 'SC21098', 'Delivered');
+--=======================STORED PROCEDURE
+
+-- Stored Procedure GetOrderDetailById
+CREATE PROCEDURE GetOrderDetailById
+    @Id INT
+AS
+BEGIN
+    SELECT 
+	o.Id AS OrderId,
+	o.Quantity ,
+	o.OrderDate,
+	p.Id AS ProductId,
+	p.Name AS ProductName,
+	p.Price AS ProductPrice,
+	c.Id AS CategoryId,
+	c.Name AS CategoryName
+
+	FROM Orders o
+	JOIN Products p ON o.ProductId = p.Id
+	JOIN Categories c ON p.CategoryId = c.Id
+	WHERE 
+	o.Id = @Id;
+END
 GO
 
 --Create Stored Procedure GetShipmentDetail
@@ -352,4 +321,342 @@ BEGIN
     WHERE s.ShipperId = @Id;
 END
 GO
-    
+
+--GetRatingAVGByProductId
+CREATE PROCEDURE GetRatingAVGByProductId
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+    p.Name AS ProductName,
+    p.Price AS ProductPrice,
+    c.Name AS CategoryName,
+    AVG(r.Rating) AS AverageRating 
+    FROM Ratings r
+    JOIN Products p ON r.ProductId = p.Id
+    JOIN Categories c ON p.CategoryId = c.Id
+    WHERE r.ProductId = @Id
+    GROUP BY p.Name, p.Price, c.Name
+    ORDER BY AverageRating DESC;
+END
+GO
+
+--SearchProduct
+CREATE PROCEDURE SearchProduct
+    @KeySearch NVARCHAR(256),
+    @TypeSearch INT, --1: Tất cả, 2: Mức ưu đãi, 3: Đánh giá 
+    @CategoryId INT, --Nếu null thì trả về tất cả   
+    @PageNumber INT, 
+    @PageSize INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Offset INT = (@PageNumber - 1) * @PageSize;
+
+    IF(@TypeSearch = 1) --Tất cả
+    BEGIN
+        IF LEN(@KeySearch) = 0 --Tất cả
+            BEGIN
+                SELECT 
+                    p.Name AS ProductName,
+                    p.Price AS ProductPrice,
+                    c.Name AS CategoryName,
+                    d.DiscountPercentage AS DiscountPercentage,
+                    (p.Price - (p.Price * d.DiscountPercentage / 100)) AS DiscountedPrice,
+                    d.StartDate AS DiscountStartDate,
+                    d.EndDate AS DiscountEndDate
+                FROM Products p
+                JOIN Categories c ON p.CategoryId = c.Id
+                JOIN Discounts d ON p.Id = d.ProductId
+            END
+            ELSE --Tìm kiếm theo tên
+            BEGIN
+                SELECT 
+                    p.Name AS ProductName,
+                    p.Price AS ProductPrice,
+                    c.Name AS CategoryName,
+                    d.DiscountPercentage AS DiscountPercentage,
+                    (p.Price - (p.Price * d.DiscountPercentage / 100)) AS DiscountedPrice,
+                    d.StartDate AS DiscountStartDate,
+                    d.EndDate AS DiscountEndDate
+                FROM Products p
+                JOIN Categories c ON p.CategoryId = c.Id
+                JOIN Discounts d ON p.Id = d.ProductId
+                WHERE p.Name LIKE '%' + @KeySearch + '%' AND (p.CategoryId = @CategoryId OR @CategoryId IS NULL)
+            END
+    END
+    IF(@TypeSearch = 2) --Mức ưu đãi
+    BEGIN
+        IF LEN(@KeySearch) = 0 --Tất cả
+            BEGIN
+                SELECT 
+                    p.Name AS ProductName,
+                    p.Price AS ProductPrice,
+                    c.Name AS CategoryName,
+                    d.DiscountPercentage AS DiscountPercentage,
+                    (p.Price - (p.Price * d.DiscountPercentage / 100)) AS DiscountedPrice,
+                    d.StartDate AS DiscountStartDate,
+                    d.EndDate AS DiscountEndDate
+                FROM Products p
+                JOIN Categories c ON p.CategoryId = c.Id
+                JOIN Discounts d ON p.Id = d.ProductId
+                WHERE d.StartDate <= GETDATE() AND d.EndDate >= GETDATE()
+                AND (p.CategoryId = @CategoryId OR @CategoryId IS NULL)
+                ORDER BY d.DiscountPercentage DESC
+            END
+        ELSE --Tìm kiếm theo tên
+            BEGIN
+                SELECT 
+                    p.Name AS ProductName,
+                    p.Price AS ProductPrice,
+                    c.Name AS CategoryName,
+                    d.DiscountPercentage AS DiscountPercentage,
+                    (p.Price - (p.Price * d.DiscountPercentage / 100)) AS DiscountedPrice,
+                    d.StartDate AS DiscountStartDate,
+                    d.EndDate AS DiscountEndDate
+                FROM Products p
+                JOIN Categories c ON p.CategoryId = c.Id
+                JOIN Discounts d ON p.Id = d.ProductId
+                WHERE p.Name LIKE '%' + @KeySearch + '%' AND d.StartDate <= GETDATE() AND d.EndDate >= GETDATE()
+                AND (p.CategoryId = @CategoryId OR @CategoryId IS NULL)
+                ORDER BY d.DiscountPercentage DESC
+                OFFSET @Offset ROWS
+                FETCH NEXT @PageSize ROWS ONLY;
+            END
+    END
+    IF(@TypeSearch = 3) --Đánh giá
+    BEGIN
+        IF LEN(@KeySearch) = 0 --Tất cả
+            BEGIN
+                SELECT 
+                    p.Name AS ProductName,
+                    p.Price AS ProductPrice,
+                    c.Name AS CategoryName,
+                    AVG(r.Rating) AS AverageRating
+                FROM Ratings r
+                JOIN Products p ON r.ProductId = p.Id
+                JOIN Categories c ON p.CategoryId = c.Id
+                GROUP BY p.Name, p.Price, c.Name
+                ORDER BY AverageRating DESC
+                OFFSET @Offset ROWS
+                FETCH NEXT @PageSize ROWS ONLY;
+            END
+        ELSE --Tìm kiếm theo tên
+            BEGIN
+                SELECT 
+                    p.Name AS ProductName,
+                    p.Price AS ProductPrice,
+                    c.Name AS CategoryName,
+                    AVG(r.Rating) AS AverageRating
+                FROM Ratings r
+                JOIN Products p ON r.ProductId = p.Id
+                JOIN Categories c ON p.CategoryId = c.Id
+                WHERE p.Name LIKE '%' + @KeySearch + '%'
+                GROUP BY p.Name, p.Price, c.Name
+                ORDER BY AverageRating DESC
+                OFFSET @Offset ROWS
+                FETCH NEXT @PageSize ROWS ONLY;
+            END
+    END
+END
+GO
+
+--Create Order
+CREATE PROCEDURE CreateOrder
+    @CustomerId INT,
+    @ProductDetails NVARCHAR(MAX) -- JSON hoặc XML chứa thông tin sản phẩm và số lượng
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @OrderId INT;
+    DECLARE @ProductId INT;
+    DECLARE @Quantity INT;
+    DECLARE @Price DECIMAL(18, 2);
+    DECLARE @TotalAmount DECIMAL(18, 2) = 0;
+
+    -- Tạo đơn hàng mới
+    INSERT INTO Orders (CustomerId, OrderDate)
+    VALUES (@CustomerId, GETDATE());
+
+    SET @OrderId = SCOPE_IDENTITY(); -- Lấy ID của đơn hàng vừa tạo
+
+    -- Phân tích thông tin sản phẩm từ @ProductDetails
+    -- Giả sử @ProductDetails là JSON: [{"ProductId": 1, "Quantity": 2}, {"ProductId": 2, "Quantity": 1}]
+    DECLARE @ProductTable TABLE (ProductId INT, Quantity INT);
+
+    INSERT INTO @ProductTable (ProductId, Quantity)
+    SELECT ProductId, Quantity
+    FROM OPENJSON(@ProductDetails)
+    WITH (ProductId INT, Quantity INT);
+
+    -- Duyệt qua từng sản phẩm để cập nhật đơn hàng
+    DECLARE product_cursor CURSOR FOR
+    SELECT ProductId, Quantity FROM @ProductTable;
+
+    OPEN product_cursor;
+    FETCH NEXT FROM product_cursor INTO @ProductId, @Quantity;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        -- Lấy giá sản phẩm
+        SELECT @Price = Price FROM Products WHERE Id = @ProductId;
+
+        IF @Price IS NOT NULL AND @Quantity > 0
+        BEGIN
+            -- Tính tổng số tiền
+            SET @TotalAmount = @TotalAmount + (@Price * @Quantity);
+
+            -- Thêm chi tiết đơn hàng
+            INSERT INTO OrderDetails (OrderId, ProductId, Quantity, Price)
+            VALUES (@OrderId, @ProductId, @Quantity, @Price);
+        END
+
+        FETCH NEXT FROM product_cursor INTO @ProductId, @Quantity;
+    END
+
+    CLOSE product_cursor;
+    DEALLOCATE product_cursor;
+
+    -- Cập nhật tổng số tiền cho đơn hàng
+    UPDATE Orders
+    SET TotalAmount = @TotalAmount
+    WHERE Id = @OrderId;
+
+    SELECT @OrderId AS NewOrderId; -- Trả về ID của đơn hàng mới
+END
+GO
+
+--=======================END STORED PROCEDURE
+
+--=======================DATA
+
+-- Insert Sample Data into Categories
+INSERT INTO Categories (Name) VALUES 
+('Electronics'),
+('Clothing'),
+('Groceries'),
+('Books'),
+('Home Appliances');
+GO
+
+-- Insert Sample Data into Products
+INSERT INTO Products (Name, Price, CategoryId) VALUES 
+('Laptop', 999.99, 1),
+('Smartphone', 599.99, 1),
+('T-shirt', 19.99, 2),
+('Jeans', 39.99, 2),
+('Apple', 0.99, 3),
+('Milk', 1.49, 3),
+('Banana', 0.59, 3),
+('Fiction Book', 14.99, 4),
+('Blender', 29.99, 5);
+GO
+
+-- Insert Sample Data into Orders
+INSERT INTO Orders (ProductId, Quantity) VALUES 
+(1, 2),  -- 2 Laptops
+(3, 5),  -- 5 T-shirts
+(5, 10); -- 10 Apples
+GO
+
+-- Insert Sample Data into Customers
+INSERT INTO Customers (FirstName, LastName, Email, Phone, Address) VALUES 
+('John', 'Doe', 'john.doe@example.com', '123-456-7890', '123 Elm Street'),
+('Jane', 'Smith', 'jane.smith@example.com', '555-555-5555', '456 Oak Avenue'),
+('Michael', 'Brown', 'michael.brown@example.com', '789-456-1230', '789 Pine Road'),
+('Emily', 'Johnson', 'emily.johnson@example.com', '234-567-8901', '321 Birch Lane'),
+('David', 'Lee', 'david.lee@example.com', '987-654-3210', '654 Cedar Boulevard'),
+('Sophia', 'Davis', 'sophia.davis@example.com', '345-678-9012', '987 Maple Drive'),
+('William', 'Martinez', 'william.martinez@example.com', '567-890-1234', '111 Walnut Street'),
+('Olivia', 'Garcia', 'olivia.garcia@example.com', '765-432-1098', '222 Spruce Avenue'),
+('James', 'Wilson', 'james.wilson@example.com', '876-543-2109', '333 Redwood Street'),
+('Isabella', 'Lopez', 'isabella.lopez@example.com', '654-321-0987', '444 Palm Court');
+GO
+
+-- Insert Sample Data into Payments
+INSERT INTO Payments (OrderId, PaymentMethod, Amount) VALUES 
+(1, 'Credit Card', 1999.98),
+(2, 'PayPal', 99.95),
+(3, 'Debit Card', 9.90),
+(4, 'Credit Card', 14.99),
+(5, 'Cash', 29.90),
+(6, 'PayPal', 59.98),
+(7, 'Credit Card', 29.99),
+(8, 'Debit Card', 299.99),
+(9, 'Cash', 499.99),
+(10, 'Credit Card', 19.99);
+GO
+
+-- Insert Sample Data into Shippers
+INSERT INTO Shippers (Name, Phone, Email, Address) VALUES 
+('Fast Delivery', '111-222-3333', 'info@fastdelivery.com', '101 First Avenue'),
+('Speedy Shipping', '444-555-6666', 'contact@speedyshipping.com', '202 Second Street'),
+('Express Logistics', '777-888-9999', 'support@expresslogistics.com', '303 Third Boulevard'),
+('Reliable Couriers', '123-456-7890', 'service@reliablecouriers.com', '404 Fourth Lane'),
+('Global Shippers', '555-666-7777', 'global@shippers.com', '505 Fifth Road'),
+('Quick Transport', '888-999-0000', 'quick@transport.com', '606 Sixth Avenue'),
+('Next Day Shipping', '999-888-7777', 'nextday@shipping.com', '707 Seventh Street'),
+('Best Freight', '666-555-4444', 'info@bestfreight.com', '808 Eighth Boulevard'),
+('Prime Shipping', '444-333-2222', 'prime@shipping.com', '909 Ninth Road'),
+('Safe Cargo', '222-111-0000', 'contact@safecargo.com', '100 First Street');
+GO
+
+-- Insert Sample Data into Shipments
+INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status) VALUES 
+(1, 1, 'FD12345', 'Shipped'),
+(2, 2, 'SS54321', 'Delivered'),
+(3, 3, 'EL98765', 'In Transit'),
+(4, 4, 'RC87654', 'Pending'),
+(5, 5, 'GS76543', 'Delivered'),
+(6, 6, 'QT65432', 'Shipped'),
+(7, 7, 'ND54321', 'In Transit'),
+(8, 8, 'BF43210', 'Pending'),
+(9, 9, 'PS32109', 'Shipped'),
+(10, 10, 'SC21098', 'Delivered');
+GO
+
+-- Insert Sample Data into Discounts
+INSERT INTO Discounts (ProductId, DiscountPercentage, StartDate, EndDate) VALUES 
+(1, 10.00, '2023-01-01', '2023-01-31'), -- 10% off Laptop
+(2, 15.00, '2023-02-01', '2023-02-28'), -- 15% off Smartphone
+(3, 5.00, '2023-03-01', '2023-03-31'),  -- 5% off T-shirt
+(4, 20.00, '2023-04-01', '2023-04-30'), -- 20% off Jeans
+(5, 10.00, '2023-05-01', '2023-05-31'), -- 10% off Apple
+(6, 15.00, '2023-06-01', '2023-06-30'), -- 15% off Milk
+(7, 5.00, '2023-07-01', '2023-07-31'),  -- 5% off Banana
+(8, 25.00, '2023-08-01', '2023-08-31'), -- 25% off Fiction Book
+(9, 30.00, '2023-09-01', '2023-09-30'); -- 30% off Blender
+GO
+
+-- Insert Sample Data into Ratings
+INSERT INTO Ratings (ProductId, UserId, Rating, Review) VALUES 
+(1, 1, 4.5, 'Excellent laptop for work and gaming.'), -- Laptop
+(1, 2, 4.0, 'Good performance but a bit heavy.'),     -- Laptop
+(2, 3, 4.8, 'Best smartphone I have ever used!'),     -- Smartphone
+(3, 4, 3.5, 'Decent quality for the price.'),         -- T-shirt
+(4, 5, 4.2, 'Very comfortable jeans.'),                -- Jeans
+(5, 6, 4.8, 'Fresh and delicious apples.'),            -- Apple
+(6, 7, 4.0, 'Good quality milk, very creamy.'),        -- Milk
+(7, 8, 3.8, 'Bananas were ripe and sweet.'),           -- Banana
+(8, 9, 4.5, 'A great read, highly recommend!'),        -- Fiction Book
+(9, 10, 4.7, 'Powerful blender, makes smoothies in seconds.'), -- Blender
+(1, 1, 4.5, 'Excellent laptop for work and gaming.'),  -- Laptop
+(1, 2, 4.0, 'Good performance but a bit heavy.'),      -- Laptop
+(1, 3, 5.0, 'Best laptop I have ever owned!'),         -- Laptop
+(2, 4, 4.8, 'Best smartphone I have ever used!'),      -- Smartphone
+(2, 5, 4.5, 'Great features for the price.'),          -- Smartphone
+(3, 6, 3.5, 'Decent quality for the price.'),          -- T-shirt
+(3, 7, 4.0, 'Comfortable and stylish.'),                -- T-shirt
+(4, 8, 4.2, 'Very comfortable jeans.'),                 -- Jeans
+(4, 9, 4.0, 'Good fit and quality.'),                   -- Jeans
+(5, 10, 4.8, 'Fresh and delicious apples.'),            -- Apple
+(6, 1, 4.0, 'Good quality milk, very creamy.'),         -- Milk
+(7, 2, 3.8, 'Bananas were ripe and sweet.'),            -- Banana
+(8, 3, 4.5, 'A great read, highly recommend!'),         -- Fiction Book
+(9, 4, 4.7, 'Powerful blender, makes smoothies in seconds.'), -- Blender
+(9, 5, 4.9, 'Best blender I have ever used!');          -- Blender
+GO
+
+--=======================END DATA
