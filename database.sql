@@ -432,7 +432,15 @@ BEGIN
 
     --Get the list of product names to use as columns
     SELECT @Columns = STRING_AGG(QUOTENAME(Name), ', ')
-    FROM Products;
+    FROM (
+        SELECT p.Name AS ProductName
+        FROM Orders o
+        JOIN Products p ON o.ProductId = p.Id
+        WHERE MONTH(o.OrderDate) = @Month
+        AND YEAR(o.OrderDate) = @Year
+        GROUP BY p.Name
+        HAVING COALESCE(SUM(o.Quantity * p.Price), 0) > 0
+    ) AS ProfitableProducts;
 
     --Dynamic SQL query
     SET @SQL = N'
