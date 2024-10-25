@@ -431,7 +431,7 @@ BEGIN
     DECLARE @Columns NVARCHAR(MAX);
 
     --Get the list of product names to use as columns
-    SELECT @Columns = STRING_AGG(QUOTENAME(Name), ', ')
+    SELECT @Columns = STRING_AGG(QUOTENAME(ProductName), ', ')
     FROM (
         SELECT p.Name AS ProductName
         FROM Orders o
@@ -682,7 +682,483 @@ BEGIN
 END
 GO
 
+--GetProductProfitByYear
+CREATE PROCEDURE GetProductProfitByYear
+    @Year INT
+AS
+BEGIN
+    DECLARE @Columns NVARCHAR(MAX);
+    DECLARE @SQL NVARCHAR(MAX);
+
+    -- Dynamically build the list of months based on the order dates in the given year
+    SELECT @Columns = STRING_AGG(QUOTENAME(Month), ',')
+    FROM (
+        SELECT DISTINCT MONTH(o.OrderDate) AS Month
+        FROM Orders o
+        WHERE YEAR(o.OrderDate) = @Year
+    ) AS DistinctMonths;
+
+    -- Build dynamic SQL to perform the PIVOT
+    SET @SQL = N'
+    WITH ProfitData AS (
+        SELECT 
+            p.Name AS ProductName,
+            MONTH(o.OrderDate) AS Month,
+            SUM(o.Quantity * p.Price) AS MonthlyProfit
+        FROM Orders o
+        JOIN Products p ON o.ProductId = p.Id
+        WHERE YEAR(o.OrderDate) = @Year
+        GROUP BY p.Name, MONTH(o.OrderDate)
+    )
+
+    SELECT ProductName, ' + @Columns + '
+    FROM ProfitData
+    PIVOT (
+        SUM(MonthlyProfit) 
+        FOR Month IN (' + @Columns + ')
+    ) AS PivotTable;'
+
+    -- Execute the dynamic SQL
+    EXEC sp_executesql @SQL, N'@Year INT', @Year;
+END
+GO
+
+--GetTotalProductSellingByYear
+CREATE PROCEDURE GetTotalProductSellingByYear
+    @Year INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @SQL NVARCHAR(MAX)
+    DECLARE @Columns NVARCHAR(MAX)
+
+    SELECT @Columns = STRING_AGG(QUOTENAME(Month),',')
+    FROM (
+        SELECT DISTINCT MONTH(o.OrderDate) AS Month
+        FROM Orders o
+        WHERE YEAR(o.OrderDate) = @Year
+    ) AS DistinctMonths
+
+    SET @SQL = N'
+    WITH OrderData AS (
+        SELECT 
+            MONTH(o.OrderDate) AS Month,
+            SUM(o.Quantity) AS TotalProduct
+        FROM Orders o
+        WHERE YEAR(o.OrderDate) = @Year
+        GROUP BY MONTH(OrderDate)
+    )
+
+    SELECT ' + @Columns + '
+    FROM OrderData
+    PIVOT (
+        SUM(TotalProduct)
+        FOR Month IN (' + @Columns + ')
+    ) AS PivotTable;
+    '
+
+    EXEC sp_executesql @SQL,N'@Year INT', @Year;
+END
+GO
+
+--GetAVGRatingByYear
+ALTER PROCEDURE GetAVGRatingByYear
+    @Year INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @SQL NVARCHAR(MAX)
+    DECLARE @Columns NVARCHAR(MAX)
+
+    SELECT @Columns = STRING_AGG(QUOTENAME(ProductName), ',')
+    FROM (
+		SELECT DISTINCT p.Name AS ProductName
+		FROM Products p
+		JOIN Ratings r ON p.Id = r.ProductId 
+		WHERE YEAR(r.CreatedAt) = @Year
+		GROUP BY p.Name
+		) AS DistinctProduct
+
+    SET @SQL = N'
+        WITH RatingData AS (
+            SELECT 
+                p.Name AS ProductName,
+                AVG(r.Rating) AS RatingAVG
+            FROM Ratings r
+            JOIN Products p ON p.Id = r.ProductId
+            WHERE YEAR(r.CreatedAt) = @Year
+            GROUP BY p.Name
+        )
+
+        SELECT ' + @Columns + '
+        FROM RatingData
+        PIVOT (
+            MAX(RatingAVG)
+            FOR ProductName IN (' + @Columns + ')
+        ) AS PivotTable
+    '
+    EXEC sp_executesql @SQL, N'@Year INT', @Year
+END
+GO
+
+
+/*
+{
+    "Orders" : [
+        {
+        "ProductId" : 12,
+        "Quantity" : 5,
+        "PaymentMethod":"Cash"
+        },
+         {
+        "ProductId" : 8,
+        "Quantity" : 9,
+        "PaymentMethod":"Paypal"
+        },
+         {
+        "ProductId" : 6,
+        "Quantity" : 24,
+        "PaymentMethod":"Debit Card"
+        },
+        {
+        "ProductId" : 1,
+        "Quantity" : 12,
+        "PaymentMethod":"Credit Card"
+        }
+    ]
+}
+*/
+
+--AddOrderPaymentAndShipingByJson
+CREATE PROCEDURE AddOrderPaymentAndShipingByJson
+    @JsonTable NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedOrders TABLE (Id INT, ProductId INT, Quantity INT);
+
+    --Add data into Orders with json
+    INSERT INTO Orders (ProductId, Quantity)
+    OUTPUT INSERTED.Id, INSERTED.ProductId, INSERTED.Quantity INTO @InsertedOrders
+    SELECT 
+        ProductId,
+        Quantity
+    FROM 
+        OPENJSON(@JsonTable, '$.Orders')
+        WITH (
+            ProductId INT '$.ProductId',
+            Quantity INT '$.Quantity'
+        );
+
+    --Add data into Payments with OrderOutput
+    INSERT INTO Payments (OrderId, PaymentMethod, Amount)
+    SELECT 
+        i.Id,
+        j.PaymentMethod,
+        p.Price * i.Quantity AS Amount
+    FROM 
+        @InsertedOrders i
+    JOIN OPENJSON(@JsonTable, '$.Orders') WITH (
+        ProductId INT '$.ProductId',
+        PaymentMethod NVARCHAR(20) '$.PaymentMethod'
+    ) j ON i.ProductId = j.ProductId
+    JOIN Products p ON i.ProductId = p.Id;
+
+    --Add data Shipments with OrderId and random Shipper Data
+    INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status)
+    SELECT 
+        i.Id,
+        --Get first id of Shipper with random NEWID()
+        (SELECT TOP 1 Id FROM Shippers ORDER BY NEWID()) AS ShipperId,
+        --Get random with format XX00000 
+        CHAR(65 + ABS(CHECKSUM(NEWID())) % 26) +  CHAR(65 + ABS(CHECKSUM(NEWID())) % 26) + RIGHT('00000' + CAST(ABS(CHECKSUM(NEWID())) % 100000 AS NVARCHAR(5)), 5) AS TrackingNumber,
+        N'In Transit' AS Status
+    FROM   
+        @InsertedOrders i;
+    --Show all data was insert
+    SELECT o.*, p.*, s.* 
+    FROM Orders o 
+    JOIN Payments p ON p.OrderId = o.Id
+    JOIN Shipments s ON s.OrderId = o.Id
+    WHERE o.Id IN (SELECT Id FROM @InsertedOrders)
+END
+GO
 --
+/* ---------------------TEST OPENJSON
+DECLARE @JsonTable NVARCHAR(MAX) = N'
+    [
+    {
+		    "Id":1,
+        "spec":{"version":"12.3.4","type":"electric", "power": "220w"},
+        "description":"Hmmmmmmm"
+    },
+    {
+		    "Id":2,
+        "spec":{"version":"8.0.2","type":"electric", "power": "220w"},
+        "description":"umison adopt with skjqw"
+    }
+    ]
+
+'
+
+SELECT 
+    p.Id,
+    p.Name,
+    p.Price,
+	result.Version AS ProductVersion,
+	result.Type AS ProductType,
+	result.Power AS ProductPower,
+	result.Description AS ProductDescription,
+    p.CategoryId
+FROM Products p
+CROSS APPLY OPENJSON(@JsonTable)
+WITH(
+	Id INT '$.Id',
+    Version NVARCHAR(50) '$.spec.version',
+    Type NVARCHAR(50) '$.spec.type',
+    Power NVARCHAR(50) '$.spec.power',
+    Description NVARCHAR(100) '$.description'
+) AS result
+INNER JOIN Categories c ON p.CategoryId = c.Id
+WHERE result.Id = p.Id
+*/
+
+/*
+{
+	"Products": [
+		{
+			"ProductName": "Nokia",
+			"ProductPrice": 126.32,
+			"CategoryId": 1
+		},
+		{
+			"ProductName": "You And Me With The Death",
+			"ProductPrice": 36.5,
+			"CategoryId": 4
+		},
+		{
+			"ProductName": "Beach Shirt",
+			"ProductPrice": 24.2,
+			"CategoryId": 2
+		}
+	]
+}
+*/
+
+--Create Stored Procedure AddProductByJson
+CREATE PROCEDURE AddProductByJson 
+    @JsonTable NVARCHAR(MAX)
+AS 
+BEGIN
+    SET NOCOUNT ON;
+
+INSERT INTO Products
+    SELECT 
+        ProductName, 
+        ProductPrice, 
+        CategoryId
+    FROM 
+        OPENJSON(@JsonTable, '$.Products') 
+        WITH (
+            ProductName NVARCHAR(100) '$.ProductName',
+            ProductPrice DECIMAL(18,2) '$.ProductPrice',
+            CategoryId INT '$.CategoryId'
+        );
+END
+GO
+
+/*
+{
+    "Orders" : [
+        {
+        "ProductId" : 12,
+        "Quantity" : 5,
+        "PaymentMethod":"Cash"
+        },
+         {
+        "ProductId" : 8,
+        "Quantity" : 9,
+        "PaymentMethod":"Paypal"
+        },
+         {
+        "ProductId" : 6,
+        "Quantity" : 24,
+        "PaymentMethod":"Debit Card"
+        },
+        {
+        "ProductId" : 1,
+        "Quantity" : 12,
+        "PaymentMethod":"Credit Card"
+        }
+    ]
+}
+*/
+
+--AddOrderPaymentAndShipingByJson
+CREATE PROCEDURE AddOrderPaymentAndShipingByJson
+    @JsonTable NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedOrders TABLE (Id INT, ProductId INT, Quantity INT);
+
+    --Add data into Orders with json
+    INSERT INTO Orders (ProductId, Quantity)
+    OUTPUT INSERTED.Id, INSERTED.ProductId, INSERTED.Quantity INTO @InsertedOrders
+    SELECT 
+        ProductId,
+        Quantity
+    FROM 
+        OPENJSON(@JsonTable, '$.Orders')
+        WITH (
+            ProductId INT '$.ProductId',
+            Quantity INT '$.Quantity'
+        );
+
+    --Add data into Payments with OrderOutput
+    INSERT INTO Payments (OrderId, PaymentMethod, Amount)
+    SELECT 
+        i.Id,
+        j.PaymentMethod,
+        p.Price * i.Quantity AS Amount
+    FROM 
+        @InsertedOrders i
+    JOIN OPENJSON(@JsonTable, '$.Orders') WITH (
+        ProductId INT '$.ProductId',
+        PaymentMethod NVARCHAR(20) '$.PaymentMethod'
+    ) j ON i.ProductId = j.ProductId
+    JOIN Products p ON i.ProductId = p.Id;
+
+    --Add data Shipments with OrderId and random Shipper Data
+    INSERT INTO Shipments (OrderId, ShipperId, TrackingNumber, Status)
+    SELECT 
+        i.Id,
+        --Get first id of Shipper with random NEWID()
+        (SELECT TOP 1 Id FROM Shippers ORDER BY NEWID()) AS ShipperId,
+        --Get random with format XX00000 
+        CHAR(65 + ABS(CHECKSUM(NEWID())) % 26) +  CHAR(65 + ABS(CHECKSUM(NEWID())) % 26) + RIGHT('00000' + CAST(ABS(CHECKSUM(NEWID())) % 100000 AS NVARCHAR(5)), 5) AS TrackingNumber,
+        N'In Transit' AS Status
+    FROM   
+        @InsertedOrders i;
+    --Show all data was insert
+    SELECT o.*, p.*, s.* 
+    FROM Orders o 
+    JOIN Payments p ON p.OrderId = o.Id
+    JOIN Shipments s ON s.OrderId = o.Id
+    WHERE o.Id IN (SELECT Id FROM @InsertedOrders)
+END
+GO
+/*
+{
+    "Discounts": [
+    {
+    "ProductId" : 2,
+    "DiscountPercentage" : 10.00,
+    "Duration": 90
+    },
+    {
+    "ProductId" : 12,
+    "DiscountPercentage" : 20.00,
+    "Duration": 30
+    },
+        {
+    "ProductId" : 13,
+    "DiscountPercentage" : 40.00,
+    "Duration": 10
+    },
+        {
+    "ProductId" : 16,
+    "DiscountPercentage" : 50.00,
+    "Duration": 60
+    }
+    ]
+    
+}
+*/
+
+--AddDiscountByJson
+CREATE PROCEDURE AddDiscountByJson
+    @JsonTable NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO Discounts (ProductId, DiscountPercentage, StartDate, EndDate)
+    SELECT 
+        ProductId,
+        DiscountPercentage,
+        GETDATE() AS StartDate,
+        DATEADD(DAY, Duration, GETDATE()) AS EndDate 
+    FROM OPENJSON(@JsonTable, '$.Discounts')
+        WITH (
+            ProductId INT '$.ProductId',
+            DiscountPercentage DECIMAL(5,2) '$.DiscountPercentage',
+            Duration INT '$.Duration'
+        )
+END
+GO
+
+--GetQuantityProductSellingByYear
+CREATE PROCEDURE GetQuantityProductSellingByYear
+    @Year INT
+AS 
+BEGIN
+    DECLARE @Columns NVARCHAR(MAX);
+    DECLARE @SQL NVARCHAR(MAX);
+
+    SELECT @Columns = STRING_AGG(QUOTENAME(Month), ',')
+    FROM (
+        SELECT DISTINCT MONTH(o.OrderDate) AS Month
+        FROM Orders o
+        WHERE YEAR(o.OrderDate) = @Year
+    ) AS DistinctMonths;
+
+    SET @SQL = N'
+        WITH ProductData AS (
+            SELECT 
+             p.Name AS ProductName,
+            MONTH(o.OrderDate) AS Month,
+            SUM(o.Quantity) AS MonthlyQuantity
+             FROM Orders o
+        JOIN Products p ON o.ProductId = p.Id
+        WHERE YEAR(o.OrderDate) = @Year
+        GROUP BY p.Name, MONTH(o.OrderDate)
+    )
+
+    SELECT ProductName, ' + @Columns + '
+    FROM ProductData
+    PIVOT (
+        SUM(MonthlyQuantity) 
+        FOR Month IN (' + @Columns + ')
+    ) AS PivotTable;'
+
+    EXEC sp_executesql @SQL, N'@Year INT', @Year;
+END
+GO
+
+
+--GetRatingProductByCustomer
+CREATE PROCEDURE GetRatingProductByCustomer
+    @CustomerId INT
+AS 
+BEGIN
+    SELECT 
+        c.FirstName + ' ' + c.LastName AS FullName,
+        c.Email,
+        c.Phone,
+        p.Name AS ProductName,
+        p.Price AS ProductPrice,
+        r.Rating AS RatingPoint,
+        r.Review AS RatingReview,
+        r.CreatedAt AS RatingDate
+    FROM Customers c
+    JOIN Ratings r ON r.UserId = c.Id
+    JOIN Products p ON r.ProductId = p.Id
+    WHERE c.Id = @CustomerId
+END
+GO
 
 
 --=======================END STORED PROCEDURE
@@ -742,6 +1218,107 @@ INSERT INTO Orders (ProductId, Quantity) VALUES
 (15, 10), -- 10 Apples
 (16, 10), -- 10 Apples
 (17, 10); -- 10 Apples
+GO
+
+INSERT INTO Orders (ProductId, Quantity, OrderDate) VALUES 
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-01-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-03-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-04-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-06-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-07-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-08-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-09-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-11-10'), -- Banana
+
+(1, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-01'),  -- Laptop
+(2, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-02'),  -- Smartphone
+(3, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-03'),  -- T-shirt
+(4, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-04'),  -- Jeans
+(5, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-05'),  -- Apple
+(6, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-06'),  -- ApplePen
+(7, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-07'),  -- AppleWatch
+(8, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-08'),  -- AppleAirpods
+(9, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-09'),  -- Milk
+(10, FLOOR(RAND() * (50 - 20 + 1)) + 20, '2024-12-10'); -- Banana
 GO
 
 -- Insert Sample Data into Customers
